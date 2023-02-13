@@ -1,0 +1,49 @@
+package api
+
+import (
+	"errors"
+	"net/http"
+	"seclab/model"
+
+	"github.com/golang-jwt/jwt/v4"
+	echojwt "github.com/labstack/echo-jwt/v4"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+)
+
+func RunHttpServer(h *Handler) {
+	e := echo.New()
+	e.Use(middleware.Logger())
+	e.Use(middleware.Recover())
+
+	e.POST("/login", h.Login)
+	e.GET("/products", h.FindProductByCategory)
+
+	// Restricted group
+	r := e.Group("/admin")
+	{
+		// Configure middleware with the custom claims type
+		config := echojwt.Config{
+			NewClaimsFunc: func(c echo.Context) jwt.Claims {
+				return new(model.JwtCustomClaims)
+			},
+			SigningKey: []byte("secret"),
+		}
+
+		r.Use(echojwt.WithConfig(config))
+		r.GET("/users/:id", h.FindUserByID)
+		r.GET("/", func(c echo.Context) error {
+			token, ok := c.Get("user").(*jwt.Token) // by default token is stored under `user` key
+			if !ok {
+				return errors.New("JWT token missing or invalid")
+			}
+			claims, ok := token.Claims.(jwt.MapClaims) // by default claims is of type `jwt.MapClaims`
+			if !ok {
+				return errors.New("failed to cast claims as jwt.MapClaims")
+			}
+			return c.JSON(http.StatusOK, claims)
+		})
+	}
+
+	e.Logger.Fatal(e.Start(":1323"))
+}
